@@ -23,29 +23,50 @@ namespace Celeste.Mod.ClimbJumpFixer {
 
         public override void Load() {
             IL.Celeste.Player.NormalUpdate += PlayerOnNormalUpdate;
-            IL.Celeste.Player.ClimbUpdate += ModCanUnDuck;
-            IL.Celeste.Player.NormalUpdate += ModCanUnDuck;
-            IL.Celeste.Player.DashUpdate += ModCanUnDuck;
+
+            IL.Celeste.Player.ClimbUpdate += ModClimbUpdateCanUnDuck;
+            IL.Celeste.Player.NormalUpdate += ModNormalUpdateCanUnDuck;
+            IL.Celeste.Player.DashUpdate += ModNormalUpdateCanUnDuck;
+            IL.Celeste.Player.RedDashUpdate += ModNormalUpdateCanUnDuck;
             IL.Celeste.Player.SuperWallJump += ModDucking;
             ilHook = new ILHook(typeof(Player).GetMethod("orig_WallJump", BindingFlags.Instance | BindingFlags.NonPublic), ModDucking);
         }
 
         public override void Unload() {
             IL.Celeste.Player.NormalUpdate -= PlayerOnNormalUpdate;
-            IL.Celeste.Player.ClimbUpdate -= ModCanUnDuck;
-            IL.Celeste.Player.NormalUpdate -= ModCanUnDuck;
-            IL.Celeste.Player.DashUpdate -= ModCanUnDuck;
+
+            IL.Celeste.Player.ClimbUpdate -= ModClimbUpdateCanUnDuck;
+            IL.Celeste.Player.NormalUpdate -= ModNormalUpdateCanUnDuck;
+            IL.Celeste.Player.DashUpdate -= ModNormalUpdateCanUnDuck;
+            IL.Celeste.Player.RedDashUpdate -= ModNormalUpdateCanUnDuck;
             IL.Celeste.Player.SuperWallJump -= ModDucking;
             ilHook.Dispose();
         }
 
-        private void ModCanUnDuck(ILContext il) {
+        private void ModNormalUpdateCanUnDuck(ILContext il) {
+            ILCursor ilCursor = new ILCursor(il);
+            while (ilCursor.TryGotoNext(
+                MoveType.After,
+                ins => ins.MatchCallvirt<Player>("get_CanUnDuck")
+            )) {
+                ILCursor cursor = ilCursor.Clone();
+                if (cursor.TryGotoNext(MoveType.After, ins => ins.MatchCallvirt<Player>("WallJumpCheck"))
+                    && ilCursor.Index + 10 > cursor.Index) {
+                    ilCursor.EmitDelegate<Func<bool, bool>>(canUnDuck => Settings.DuckableWallJump || canUnDuck);
+                    Logger.Log("ClimbJumpFixerModule", il.Method.ToString());
+                }
+            }
+        }
+
+
+        private void ModClimbUpdateCanUnDuck(ILContext il) {
             ILCursor ilCursor = new ILCursor(il);
             while (ilCursor.TryGotoNext(
                 MoveType.After,
                 ins => ins.MatchCallvirt<Player>("get_CanUnDuck")
             )) {
                 ilCursor.EmitDelegate<Func<bool, bool>>(canUnDuck => Settings.DuckableWallJump || canUnDuck);
+                Logger.Log("ClimbJumpFixerModule", il.Method.ToString());
             }
         }
 
@@ -62,6 +83,7 @@ namespace Celeste.Mod.ClimbJumpFixer {
                     if (Settings.DuckableWallJump && !player.CanUnDuck) {
                         Engine.Commands.Log("Jump!");
                     }
+
                     return Settings.DuckableWallJump && !player.CanUnDuck || duck;
                 });
             }
@@ -79,10 +101,12 @@ namespace Celeste.Mod.ClimbJumpFixer {
                     ilCursor.Emit(OpCodes.Ldarg_0);
                     ilCursor.EmitDelegate<Func<Player, float, float>>(delegate(Player player, float speedY) {
                         if (ClimbJumpCheck(player)) {
-                            if (Input.Jump.Pressed && Math.Sign(player.Speed.X) != -(int) player.Facing && player.ClimbCheck((int)player.Facing)) {
+                            if (Input.Jump.Pressed && Math.Sign(player.Speed.X) != -(int) player.Facing && player.ClimbCheck((int) player.Facing)) {
                                 Level level = player.SceneAs<Level>();
-                                Logger.Log("ClimbJumpFixer", $"Maybe try to grab but climbjump: chapter time {TimeSpan.FromTicks(level.Session.Time).ShortGameplayFormat()}");
+                                Logger.Log("ClimbJumpFixer",
+                                    $"Maybe try to grab but climbjump: chapter time {TimeSpan.FromTicks(level.Session.Time).ShortGameplayFormat()}");
                             }
+
                             return -1f;
                         } else {
                             return speedY;
