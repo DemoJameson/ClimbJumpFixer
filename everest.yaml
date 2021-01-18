@@ -1,0 +1,7 @@
+- Name: ClimbJumpFixer
+  Version: 0.2.0
+  DLL: ClimbJumpFixer.dll
+  Author: DemoJameson
+  Dependencies:
+    - Name: Everest
+      Version: 1.2138.0
